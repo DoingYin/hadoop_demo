@@ -9,7 +9,7 @@
     <version>1.0-SNAPSHOT</version>
 
     <properties>
-        <hadoop-version>2.7.3</hadoop-version>
+        <hadoop-version>2.5.0</hadoop-version>
         <zookeeper-version>3.4.5</zookeeper-version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>

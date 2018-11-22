@@ -138,12 +138,11 @@ public class WordCount extends Configured implements Tool {
     }
 
     public static void main(String args[]) {
-        System.out.println("Hello ");
         Configuration conf = new Configuration();
 
         args = new String[]{
-                "hdfs://192.168.206.142:8020/walloce/testdata/test.txt",
-                "hdfs://192.168.206.142:8020/walloce/output"
+                "hdfs://walloce.one:8020/walloce/data/test.txt",
+                "hdfs://walloce.one:8020/walloce/output"
         };
 
         try {

@@ -10,7 +10,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Timer;
@@ -44,7 +43,6 @@ public abstract class Shell {
     public static final String READ_LINK_COMMAND = "readlink";
     protected long timeOutInterval;
     private AtomicBoolean timedOut;
-    protected boolean inheritParentEnv;
     private static String HADOOP_HOME_DIR;
     public static final String WINUTILS;
     public static final boolean isSetsidAvailable;
@@ -64,25 +62,17 @@ public abstract class Shell {
 
     public static void checkWindowsCommandLineLength(String... commands) throws IOException {
         int len = 0;
-        String[] var2 = commands;
-        int var3 = commands.length;
+        String[] arr$ = commands;
+        int len$ = commands.length;
 
-        for(int var4 = 0; var4 < var3; ++var4) {
-            String s = var2[var4];
+        for(int i$ = 0; i$ < len$; ++i$) {
+            String s = arr$[i$];
             len += s.length();
         }
 
         if (len > 8191) {
             throw new IOException(String.format("The command line has a length of %d exceeds maximum allowed length of %d. Command starts with: %s", len, 8191, StringUtils.join("", commands).substring(0, 100)));
         }
-    }
-
-    static String bashQuote(String arg) {
-        StringBuilder buffer = new StringBuilder(arg.length() + 2);
-        buffer.append('\'');
-        buffer.append(arg.replace("'", "'\\''"));
-        buffer.append('\'');
-        return buffer.toString();
     }
 
     private static Shell.OSType getOSType() {
@@ -103,20 +93,15 @@ public abstract class Shell {
     }
 
     public static String[] getGroupsCommand() {
-        return WINDOWS ? new String[]{"cmd", "/c", "groups"} : new String[]{"groups"};
+        return WINDOWS ? new String[]{"cmd", "/c", "groups"} : new String[]{"bash", "-c", "groups"};
     }
 
     public static String[] getGroupsForUserCommand(String user) {
-        if (WINDOWS) {
-            return new String[]{getWinUtilsPath(), "groups", "-F", "\"" + user + "\""};
-        } else {
-            String quotedUser = bashQuote(user);
-            return new String[]{"bash", "-c", "id -gn " + quotedUser + "; id -Gn " + quotedUser};
-        }
+        return WINDOWS ? new String[]{WINUTILS, "groups", "-F", "\"" + user + "\""} : new String[]{"bash", "-c", "id -gn " + user + "&& id -Gn " + user};
     }
 
     public static String[] getUsersForNetgroupCommand(String netgroup) {
-        return new String[]{"getent", "netgroup", netgroup};
+        return WINDOWS ? new String[]{"cmd", "/c", "getent netgroup " + netgroup} : new String[]{"bash", "-c", "getent netgroup " + netgroup};
     }
 
     public static String[] getGetPermissionCommand() {
@@ -172,7 +157,7 @@ public abstract class Shell {
 
     public static String[] getRunScriptCommand(File script) {
         String absolutePath = script.getAbsolutePath();
-        return WINDOWS ? new String[]{"cmd", "/c", absolutePath} : new String[]{"/bin/bash", bashQuote(absolutePath)};
+        return WINDOWS ? new String[]{"cmd", "/c", absolutePath} : new String[]{"/bin/bash", absolutePath};
     }
 
     private static String checkHadoopHome() {
@@ -216,7 +201,7 @@ public abstract class Shell {
     }
 
     public static final String getQualifiedBinPath(String executable) throws IOException {
-        String fullExeName = "E:\\Tools\\hadoop-2.7.3" + File.separator + "bin" + File.separator + executable;
+        String fullExeName = HADOOP_HOME_DIR + File.separator + "bin" + File.separator + executable;
         File exeFile = new File(fullExeName);
         if (!exeFile.exists()) {
             throw new IOException("Could not locate executable " + fullExeName + " in the Hadoop binaries.");
@@ -274,7 +259,6 @@ public abstract class Shell {
 
     public Shell(long interval, boolean redirectErrorStream) {
         this.timeOutInterval = 0L;
-        this.inheritParentEnv = true;
         this.interval = interval;
         this.lastTime = interval < 0L ? 0L : -interval;
         this.redirectErrorStream = redirectErrorStream;
@@ -289,7 +273,7 @@ public abstract class Shell {
     }
 
     protected void run() throws IOException {
-        if (this.lastTime + this.interval <= Time.monotonicNow()) {
+        if (this.lastTime + this.interval <= Time.now()) {
             this.exitCode = 0;
             this.runCommand();
         }
@@ -303,10 +287,6 @@ public abstract class Shell {
         this.completed = new AtomicBoolean(false);
         if (this.environment != null) {
             builder.environment().putAll(this.environment);
-        }
-
-        if (!this.inheritParentEnv) {
-            builder.environment().remove("HADOOP_CREDSTORE_PASSWORD");
         }
 
         if (this.dir != null) {
@@ -329,8 +309,8 @@ public abstract class Shell {
             timeOutTimer.schedule(timeoutTimerTask, this.timeOutInterval);
         }
 
-        final BufferedReader errReader = new BufferedReader(new InputStreamReader(this.process.getErrorStream(), Charset.defaultCharset()));
-        BufferedReader inReader = new BufferedReader(new InputStreamReader(this.process.getInputStream(), Charset.defaultCharset()));
+        final BufferedReader errReader = new BufferedReader(new InputStreamReader(this.process.getErrorStream()));
+        BufferedReader inReader = new BufferedReader(new InputStreamReader(this.process.getInputStream()));
         final StringBuffer errMsg = new StringBuffer();
         Thread errThread = new Thread() {
             public void run() {
@@ -348,17 +328,14 @@ public abstract class Shell {
 
         try {
             errThread.start();
-        } catch (IllegalStateException var39) {
+        } catch (IllegalStateException var38) {
             ;
-        } catch (OutOfMemoryError var40) {
-            LOG.error("Caught " + var40 + ". One possible reason is that ulimit" + " setting of 'max user processes' is too low. If so, do" + " 'ulimit -u <largerNum>' and try again.");
-            throw var40;
         }
 
-        boolean var30 = false;
+        boolean var29 = false;
 
         try {
-            var30 = true;
+            var29 = true;
             this.parseExecResult(inReader);
 
             for(String line = inReader.readLine(); line != null; line = inReader.readLine()) {
@@ -372,11 +349,11 @@ public abstract class Shell {
                 throw new Shell.ExitCodeException(this.exitCode, errMsg.toString());
             }
 
-            var30 = false;
-        } catch (InterruptedException var42) {
-            throw new IOException(var42.toString());
+            var29 = false;
+        } catch (InterruptedException var40) {
+            throw new IOException(var40.toString());
         } finally {
-            if (var30) {
+            if (var29) {
                 if (timeOutTimer != null) {
                     timeOutTimer.cancel();
                 }
@@ -387,8 +364,8 @@ public abstract class Shell {
                     synchronized(stderr) {
                         inReader.close();
                     }
-                } catch (IOException var34) {
-                    LOG.warn("Error while closing the input stream", var34);
+                } catch (IOException var33) {
+                    LOG.warn("Error while closing the input stream", var33);
                 }
 
                 if (!this.completed.get()) {
@@ -401,12 +378,12 @@ public abstract class Shell {
                     synchronized(stderr) {
                         errReader.close();
                     }
-                } catch (IOException var32) {
-                    LOG.warn("Error while closing the error stream", var32);
+                } catch (IOException var31) {
+                    LOG.warn("Error while closing the error stream", var31);
                 }
 
                 this.process.destroy();
-                this.lastTime = Time.monotonicNow();
+                this.lastTime = Time.now();
             }
         }
 
@@ -420,8 +397,8 @@ public abstract class Shell {
             synchronized(stderr) {
                 inReader.close();
             }
-        } catch (IOException var38) {
-            LOG.warn("Error while closing the input stream", var38);
+        } catch (IOException var37) {
+            LOG.warn("Error while closing the input stream", var37);
         }
 
         if (!this.completed.get()) {
@@ -434,12 +411,12 @@ public abstract class Shell {
             synchronized(stderr) {
                 errReader.close();
             }
-        } catch (IOException var36) {
-            LOG.warn("Error while closing the error stream", var36);
+        } catch (IOException var35) {
+            LOG.warn("Error while closing the error stream", var35);
         }
 
         this.process.destroy();
-        this.lastTime = Time.monotonicNow();
+        this.lastTime = Time.now();
     }
 
     private static void joinThread(Thread t) {
@@ -531,7 +508,7 @@ public abstract class Shell {
         }
     }
 
-    public static class ShellCommandExecutor extends Shell implements Shell.CommandExecutor {
+    public static class ShellCommandExecutor extends Shell {
         private String[] command;
         private StringBuffer output;
 
@@ -548,10 +525,6 @@ public abstract class Shell {
         }
 
         public ShellCommandExecutor(String[] execString, File dir, Map<String, String> env, long timeout) {
-            this(execString, dir, env, timeout, true);
-        }
-
-        public ShellCommandExecutor(String[] execString, File dir, Map<String, String> env, long timeout, boolean inheritParentEnv) {
             this.command = (String[])execString.clone();
             if (dir != null) {
                 this.setWorkingDirectory(dir);
@@ -562,20 +535,9 @@ public abstract class Shell {
             }
 
             this.timeOutInterval = timeout;
-            this.inheritParentEnv = inheritParentEnv;
         }
 
         public void execute() throws IOException {
-            String[] var1 = this.command;
-            int var2 = var1.length;
-
-            for(int var3 = 0; var3 < var2; ++var3) {
-                String s = var1[var3];
-                if (s == null) {
-                    throw new IOException("(null) entry in command string: " + StringUtils.join(" ", this.command));
-                }
-            }
-
             this.run();
         }
 
@@ -601,11 +563,11 @@ public abstract class Shell {
         public String toString() {
             StringBuilder builder = new StringBuilder();
             String[] args = this.getExecString();
-            String[] var3 = args;
-            int var4 = args.length;
+            String[] arr$ = args;
+            int len$ = args.length;
 
-            for(int var5 = 0; var5 < var4; ++var5) {
-                String s = var3[var5];
+            for(int i$ = 0; i$ < len$; ++i$) {
+                String s = arr$[i$];
                 if (s.indexOf(32) >= 0) {
                     builder.append('"').append(s).append('"');
                 } else {
@@ -617,19 +579,6 @@ public abstract class Shell {
 
             return builder.toString();
         }
-
-        public void close() {
-        }
-    }
-
-    public interface CommandExecutor {
-        void execute() throws IOException;
-
-        int getExitCode() throws IOException;
-
-        String getOutput() throws IOException;
-
-        void close();
     }
 
     public static class ExitCodeException extends IOException {

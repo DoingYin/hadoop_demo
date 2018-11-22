@@ -16,7 +16,7 @@
     <!-- 指定计算模型在yarn上 -->
     <property>
         <name>mapreduce.framework.name</name>
-        <value>yarn</value>
+        <value>local</value>
     </property>
 
     <!-- 指定启动运行mapreduce上的nodemanager的运行服务 -->
@@ -28,7 +28,7 @@
     <!-- 指定resourcemanager的主机 -->
     <property>
         <name>yarn.resourcemanager.hostname</name>
-        <value>learn.one</value>
+        <value>192.168.206.143</value>
     </property>
 
     <!-- 启用日志聚合 -->

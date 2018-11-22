@@ -19,10 +19,10 @@
 <configuration>
     <property>
         <name>fs.defaultFS</name>
-        <value>hdfs://192.168.206.142:8020</value>
+        <value>hdfs://walloce.one:8020</value>
     </property>
     <property>
         <name>hadoop.tmp.dir</name>
-        <value>/opt/module/hadoop-2.7.3/data/tmp</value>
+        <value>/opt/module/hadoop-2.5.0/data/tmp</value>
     </property>
 </configuration>
